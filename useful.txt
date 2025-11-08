@@ -10,3 +10,24 @@ Open File Explorer and type into the address bar:
 
 
 Right-click any folder in the Explorer pane → Reveal in File Explorer
+
+
+
+
+Tell Git which files to include in the next commit. You can do:
+
+All changes:
+
+git add .
+
+
+Specific files:
+
+git add app/main.py
+git add templates/index.html
+
+3. Commit the changes
+
+Save a snapshot of your changes with a message describing what you did:
+
+git commit -m "Add gesture recognition module"
