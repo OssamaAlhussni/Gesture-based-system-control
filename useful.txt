@@ -31,3 +31,8 @@ git add templates/index.html
 Save a snapshot of your changes with a message describing what you did:
 
 git commit -m "Add gesture recognition module"
+
+
+Upload your commits to the remote repository:
+
+git push origin main
