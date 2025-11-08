@@ -1,0 +1,12 @@
+This opens the folder you're currently in in Windows File Explorer.
+
+explorer.exe .
+
+
+
+Open File Explorer and type into the address bar:
+
+\\wsl$
+
+
+Right-click any folder in the Explorer pane → Reveal in File Explorer
