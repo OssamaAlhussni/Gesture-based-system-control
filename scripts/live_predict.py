@@ -4,6 +4,7 @@ Live webcam prediction (right-hand only):
 - MediaPipe hand detection -> normalize -> KNN predict -> smoothing -> overlay label
 Display is mirrored (selfie view) but processing/prediction use the original frame.
 Run from project root with the same venv/interpreter the model was trained with.
+prototype
 """
 
 import os
