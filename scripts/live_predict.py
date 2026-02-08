@@ -3,25 +3,37 @@
 Live webcam prediction (right-hand only):
 - MediaPipe hand detection -> normalize -> KNN predict -> smoothing -> overlay label
 Display is mirrored (selfie view) but processing/prediction use the original frame.
-Run from project root with the same venv/interpreter the model was trained with.
+Ensure u have the .pkl file in the directory for the program to work correctly
 prototype
 """
-
 import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from actions.registry import ActionManager
+
+action_manager = ActionManager()
+
+from collections import Counter, deque
+
 import cv2
+import joblib
 import mediapipe as mp
 import numpy as np
-import joblib
-from collections import deque, Counter
 
 # ---------- CONFIG ----------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(BASE_DIR)
 MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "knn_gesture.pkl")
 
-SMOOTHING_WINDOW = 5
+SMOOTHING_WINDOW = 7 # previously worked with 5
 CONF_THRESH = 0.45
 CAM_INDEX = 0
+
+
+
+STABLE_FRAMES = 3
 # ----------------------------
 
 # Load model + encoder (we saved a tuple (knn, le))
@@ -58,6 +70,8 @@ def predict_vector(vec):
 
 
 def main():
+    last_gesture = None
+
     cap = cv2.VideoCapture(CAM_INDEX, cv2.CAP_DSHOW)
     if not cap.isOpened():
         raise RuntimeError("Cannot open webcam")
@@ -80,6 +94,7 @@ def main():
 
             overlay_text = "No hand"
             overlay_conf = 0.0
+            
 
             if results.multi_hand_landmarks:
                 hand_landmarks = results.multi_hand_landmarks[0]
@@ -94,12 +109,18 @@ def main():
 
                 # append to smoothing buffer and majority-vote
                 buf.append(label_display)
+                mp_draw.draw_landmarks(proc_frame,hand_landmarks,mp_hands.HAND_CONNECTIONS)
+
                 vote = Counter(buf).most_common(1)[0][0]
                 overlay_text = vote
                 overlay_conf = conf
+                if conf >= 0.75 and vote != last_gesture: #increased the conf threshold to stabilise predictions
+                    action_manager.handle(vote)
+                    last_gesture = vote
+            else:
+                    last_gesture = None
 
-                # draw landmarks on the original (proc_frame) so flipping later keeps them aligned
-                mp_draw.draw_landmarks(proc_frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+
 
             # mirror the annotated frame for display (selfie view)
             display_frame = cv2.flip(proc_frame, 1)
@@ -116,6 +137,9 @@ def main():
     cap.release()
     cv2.destroyAllWindows()
 
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()
