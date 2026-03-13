@@ -22,8 +22,8 @@ import time
 # allow importing modules from project root
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from actions.registry import ActionManager
-action_manager = ActionManager()
+from actions.registry import ActionManager  # <-- import only ActionManager
+action_manager = ActionManager()           # <-- manager holds ppt_mode now
 
 from collections import Counter, deque
 
@@ -167,6 +167,9 @@ def main():
     action_message_time = 0
     ACTION_MSG_DURATION = 2.0
 
+    post_ppt_cooldown_time = 0
+    POST_PPT_COOLDOWN = 3.0  # ignore gestures for 3 seconds after exiting PPT
+
     cap = cv2.VideoCapture(CAM_INDEX, cv2.CAP_DSHOW)
 
     if not cap.isOpened():
@@ -200,6 +203,10 @@ def main():
             overlay_conf = 0.0
             progress = 0
 
+            current_time = time.time()  # get current time once per loop
+
+            ignore_action = current_time < post_ppt_cooldown_time  # skip gestures if within post-PPT cooldown
+
             if results.multi_hand_landmarks:
 
                 hand_landmarks = results.multi_hand_landmarks[0]
@@ -232,8 +239,6 @@ def main():
                         mp_hands.HAND_CONNECTIONS
                     )
 
-                    current_time = time.time()
-
                     # gesture must be stable
                     if conf >= ACTION_CONF_THRESH and vote_count >= MIN_VOTE_COUNT:
 
@@ -250,30 +255,55 @@ def main():
 
                                 progress = min(held_time / HOLD_TIME, 1.0)
 
-                                # trigger action after hold
+                                # ---------- ACTION TRIGGER ----------
+
                                 if held_time >= HOLD_TIME:
 
-                                    if (vote != gesture_locked and
-                                        current_time - last_action_time > ACTION_COOLDOWN):
+                                    allow_repeat = action_manager.ppt_mode  # allow repeats in PPT mode
 
-                                        action_manager.handle(vote)
+                                    if (vote != gesture_locked or allow_repeat) and (current_time - last_action_time > ACTION_COOLDOWN):
 
-                                        # set feedback message
-                                        if vote == "index_point":
-                                            action_message = "Opening Google Maps"
-                                        elif vote == "fist":
-                                            action_message = "Mute/Unmute Toggled"
-                                        elif vote == "open_palm":
-                                            action_message = ''
+                                        if ignore_action:
+                                            # reset hold but skip action
+                                            gesture_start_time = None
                                         else:
-                                            action_message = f"Action: {vote}"
+                                            result = action_manager.handle(vote)
+                                            if result == "reset_lock":
+                                                gesture_locked = None
+                                                # start cooldown after exiting PPT
+                                                post_ppt_cooldown_time = current_time + POST_PPT_COOLDOWN
+
+                                        # set feedback message depending on mode
+                                        if action_manager.ppt_mode:
+                                            if vote == "index_point":
+                                                action_message = "Next Slide"
+                                            elif vote == "thumbs_up":
+                                                action_message = "Previous Slide"
+                                            elif vote == "open_palm":
+                                                action_message = "Exiting PPT Mode"
+                                            elif vote == "peace":
+                                                action_message = "Launching PowerPoint"
+                                            else:
+                                                action_message = f"Action: {vote}"
+                                        else:
+                                            # normal actions
+                                            if vote == "index_point":
+                                                action_message = "Opening Google Maps"
+                                            elif vote == "fist":
+                                                action_message = "Mute/Unmute Toggled"
+                                            elif vote == "open_palm":
+                                                action_message = ''
+                                            elif vote == "peace":
+                                                action_message = "Launching PowerPoint"
+                                            else:
+                                                action_message = f"Action: {vote}"
 
                                         action_message_time = current_time
-
                                         last_action_time = current_time
-                                        gesture_locked = vote
+                                        gesture_locked = vote if not action_manager.ppt_mode else None  # allow repeats in PPT mode
 
-                                    gesture_start_time = None
+                                        # exit gesture hold
+                                        gesture_start_time = None
 
                     else:
                         current_gesture = None
@@ -315,8 +345,8 @@ def main():
                 else:
                     action_message = None
 
-                        # show open palm mappings if gesture_locked is open_palm
-            if gesture_locked == "open_palm":
+            # show open palm mappings if gesture_locked is open_palm and NOT in PPT and NOT in cooldown
+            if not action_manager.ppt_mode and gesture_locked == "open_palm" and not ignore_action:
                 draw_centered_text(display_frame,
                                 "Index -> Maps\nFist -> Mute\nOpen Palm -> Show Mapping",
                                 font_scale=0.8,
