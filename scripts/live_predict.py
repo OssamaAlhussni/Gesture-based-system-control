@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 """
 Live webcam gesture recognition (right-hand only)
@@ -126,6 +125,36 @@ def draw_progress_bar(frame, progress):
                   (0,255,0), -1)
 
 
+def draw_centered_text(frame, text, font_scale=1.0, color=(0,255,0), thickness=2, alpha=0.5, padding=15, line_spacing=10):
+    """
+    Draw multi-line text centered on the frame with a semi-transparent background.
+    Each line appears under the previous one.
+    """
+    lines = text.split("\n")
+    
+    # Calculate total height of all lines
+    line_sizes = [cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0] for line in lines]
+    total_h = sum([h for w, h in line_sizes]) + line_spacing * (len(lines)-1)
+    
+    # Starting y-coordinate for first line to vertically center all lines
+    start_y = (frame.shape[0] - total_h) // 2
+    
+    # Draw rectangle behind all lines
+    max_w = max([w for w, h in line_sizes])
+    text_x = (frame.shape[1] - max_w) // 2
+    rect_start = (text_x - padding, start_y - padding)
+    rect_end = (text_x + max_w + padding, start_y + total_h + padding)
+    
+    overlay = frame.copy()
+    cv2.rectangle(overlay, rect_start, rect_end, (0,0,0), -1)
+    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+    
+    # Draw each line
+    y = start_y
+    for line, (w, h) in zip(lines, line_sizes):
+        cv2.putText(frame, line, (text_x, y + h), cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness)
+        y += h + line_spacing
+
 def main():
 
     # gesture state
@@ -210,7 +239,6 @@ def main():
 
                         # new gesture detected
                         if vote != current_gesture:
-
                             current_gesture = vote
                             gesture_start_time = current_time
 
@@ -235,6 +263,8 @@ def main():
                                             action_message = "Opening Google Maps"
                                         elif vote == "fist":
                                             action_message = "Mute/Unmute Toggled"
+                                        elif vote == "open_palm":
+                                            action_message = ''
                                         else:
                                             action_message = f"Action: {vote}"
 
@@ -258,8 +288,8 @@ def main():
             # mirror display for selfie view
             display_frame = cv2.flip(proc_frame, 1)
 
+            # overlay current gesture + confidence
             txt = f"{overlay_text} ({overlay_conf:.2f})"
-
             cv2.putText(display_frame,
                         txt,
                         (10,30),
@@ -268,26 +298,8 @@ def main():
                         (0,255,0),
                         2)
 
-            # small gesture instructions
-            cv2.putText(display_frame,
-                        "Index -> Maps",
-                        (10,90),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.45,
-                        (200,200,200),
-                        1)
-
-            cv2.putText(display_frame,
-                        "Fist -> Mute",
-                        (10,105),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.45,
-                        (200,200,200),
-                        1)
-
             # show lock message if gesture already triggered
             if overlay_text == gesture_locked:
-
                 cv2.putText(display_frame,
                             "Gesture locked - change gesture",
                             (10,130),
@@ -295,29 +307,20 @@ def main():
                             0.45,
                             (0,200,255),
                             1)
+
+            # show action message centered
             if action_message:
-
                 if time.time() - action_message_time < ACTION_MSG_DURATION:
-
-                    text_size = cv2.getTextSize(action_message,
-                                                cv2.FONT_HERSHEY_SIMPLEX,
-                                                1.0,
-                                                2)[0]
-
-                    text_x = (display_frame.shape[1] - text_size[0]) // 2
-                    text_y = display_frame.shape[0] // 2
-
-                    cv2.putText(display_frame,
-                                action_message,
-                                (text_x, text_y),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                1.0,
-                                (0,255,0),
-                                2)
-
+                    draw_centered_text(display_frame, action_message, font_scale=0.9)
                 else:
                     action_message = None
 
+                        # show open palm mappings if gesture_locked is open_palm
+            if gesture_locked == "open_palm":
+                draw_centered_text(display_frame,
+                                "Index -> Maps\nFist -> Mute\nOpen Palm -> Show Mapping",
+                                font_scale=0.8,
+                                color=(0,255,0))
             # draw hold progress bar
             if progress > 0:
                 draw_progress_bar(display_frame, progress)
