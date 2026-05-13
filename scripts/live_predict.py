@@ -1,32 +1,27 @@
 #!/usr/bin/env python3
 """
 Live webcam gesture recognition (right-hand only)
-
-Pipeline:
-MediaPipe hand detection
-→ Convert landmarks to normalized vector
-→ KNN prediction
-→ Temporal smoothing buffer
-→ Stable gesture detection
-→ Hold gesture for 3 seconds
-→ Trigger mapped system action
-→ Lock gesture until user changes it
-
-Display is mirrored (selfie view) but prediction uses the original frame.
+Runs Flask dashboard in background thread on http://localhost:5050
 """
 
 import os
 import sys
 import time
+import threading
 
-# allow importing modules from project root
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from actions.registry import ActionManager  # <-- import only ActionManager
-action_manager = ActionManager()           # <-- manager holds ppt_mode now
+from actions.registry import ActionManager
+from actions.voice_assistant import VoiceAssistant
+from actions.sos_whatsapp import SosWhatsApp
+import app.shared_state as shared_state
+from app.dashboard import run as run_dashboard      # <-- Flask
+
+action_manager = ActionManager()
+voice_assistant = VoiceAssistant(action_manager)
+sos             = SosWhatsApp()
 
 from collections import Counter, deque
-
 import cv2
 import joblib
 import mediapipe as mp
@@ -34,148 +29,118 @@ import numpy as np
 
 
 # ---------- CONFIG ----------
+BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT  = os.path.dirname(BASE_DIR)
+MODEL_PATH    = os.path.join(PROJECT_ROOT, "models", "knn_gesture.pkl")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(BASE_DIR)
-MODEL_PATH = os.path.join(PROJECT_ROOT, "models", "knn_gesture.pkl")
-
-SMOOTHING_WINDOW = 8
-
-CONF_THRESH = 0.50
+SMOOTHING_WINDOW   = 8
+CONF_THRESH        = 0.50
 ACTION_CONF_THRESH = 0.80
-
-MIN_VOTE_COUNT = 4
-
-HOLD_TIME = 3
-ACTION_COOLDOWN = 2
-
-CAM_INDEX = 0
-
+MIN_VOTE_COUNT     = 4
+ACTION_COOLDOWN    = 2
+CAM_INDEX          = 0
 # ----------------------------
 
 
-# Load trained model
 if not os.path.exists(MODEL_PATH):
     raise FileNotFoundError(f"Model not found at {MODEL_PATH}")
 
 knn, le = joblib.load(MODEL_PATH)
-
-
-# MediaPipe setup
 mp_hands = mp.solutions.hands
-mp_draw = mp.solutions.drawing_utils
+mp_draw  = mp.solutions.drawing_utils
 
 
 def mp_landmarks_to_vector(hand_landmarks):
-    """
-    Convert MediaPipe landmarks to normalized 42-D vector.
-    """
-
-    pts = np.array([[lm.x, lm.y] for lm in hand_landmarks.landmark], dtype=np.float32)
-
+    pts    = np.array([[lm.x, lm.y] for lm in hand_landmarks.landmark], dtype=np.float32)
     origin = pts[0].copy()
-    rel = pts - origin
-
-    dists = np.linalg.norm(rel, axis=1)
-    maxd = dists.max()
-
-    if maxd < 1e-6:
-        maxd = 1.0
-
-    norm = (rel / maxd).flatten()
-
-    return norm
+    rel    = pts - origin
+    dists  = np.linalg.norm(rel, axis=1)
+    maxd   = dists.max()
+    if maxd < 1e-6: maxd = 1.0
+    return (rel / maxd).flatten()
 
 
 def predict_vector(vec):
-    """
-    Run KNN prediction and return label + confidence.
-    """
-
     probs = knn.predict_proba([vec])[0]
-
-    idx = int(np.argmax(probs))
-
-    label = le.inverse_transform([idx])[0]
-    conf = float(probs[idx])
-
-    return label, conf
+    idx   = int(np.argmax(probs))
+    return le.inverse_transform([idx])[0], float(probs[idx])
 
 
 def draw_progress_bar(frame, progress):
-    """
-    Draw hold progress bar.
-    """
-
-    bar_x = 10
-    bar_y = 60
-    bar_w = 200
-    bar_h = 12
-
-    cv2.rectangle(frame,
-                  (bar_x, bar_y),
-                  (bar_x + bar_w, bar_y + bar_h),
-                  (255,255,255), 1)
-
-    fill = int(bar_w * progress)
-
-    cv2.rectangle(frame,
-                  (bar_x, bar_y),
-                  (bar_x + fill, bar_y + bar_h),
-                  (0,255,0), -1)
+    bx, by, bw, bh = 10, 60, 200, 12
+    cv2.rectangle(frame, (bx, by), (bx + bw, by + bh), (255, 255, 255), 1)
+    cv2.rectangle(frame, (bx, by), (bx + int(bw * progress), by + bh), (0, 255, 0), -1)
 
 
-def draw_centered_text(frame, text, font_scale=1.0, color=(0,255,0), thickness=2, alpha=0.5, padding=15, line_spacing=10):
-    """
-    Draw multi-line text centered on the frame with a semi-transparent background.
-    Each line appears under the previous one.
-    """
-    lines = text.split("\n")
-    
-    # Calculate total height of all lines
-    line_sizes = [cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0] for line in lines]
-    total_h = sum([h for w, h in line_sizes]) + line_spacing * (len(lines)-1)
-    
-    # Starting y-coordinate for first line to vertically center all lines
-    start_y = (frame.shape[0] - total_h) // 2
-    
-    # Draw rectangle behind all lines
-    max_w = max([w for w, h in line_sizes])
-    text_x = (frame.shape[1] - max_w) // 2
-    rect_start = (text_x - padding, start_y - padding)
-    rect_end = (text_x + max_w + padding, start_y + total_h + padding)
-    
-    overlay = frame.copy()
-    cv2.rectangle(overlay, rect_start, rect_end, (0,0,0), -1)
+def draw_centered_text(frame, text, font_scale=1.0, color=(0, 255, 0),
+                        thickness=2, alpha=0.5, padding=15, line_spacing=10):
+    lines      = text.split("\n")
+    line_sizes = [cv2.getTextSize(l, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0] for l in lines]
+    total_h    = sum(h for w, h in line_sizes) + line_spacing * (len(lines) - 1)
+    start_y    = (frame.shape[0] - total_h) // 2
+    max_w      = max(w for w, h in line_sizes)
+    text_x     = (frame.shape[1] - max_w) // 2
+    overlay    = frame.copy()
+    cv2.rectangle(overlay, (text_x - padding, start_y - padding),
+                  (text_x + max_w + padding, start_y + total_h + padding), (0, 0, 0), -1)
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
-    
-    # Draw each line
     y = start_y
     for line, (w, h) in zip(lines, line_sizes):
         cv2.putText(frame, line, (text_x, y + h), cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness)
         y += h + line_spacing
 
+
+def draw_legend(frame, ppt_mode):
+    if ppt_mode:
+        lines = [
+            "  -- PPT MODE --",
+            "Index Point  ->  Next Slide",
+            "Thumbs Up    ->  Previous Slide",
+            "Open Palm    ->  Exit PPT",
+        ]
+    else:
+        lines = [
+            "  -- GESTURE MAP --",
+            "Index Point  ->  Google Maps",
+            "Fist         ->  Mute / Unmute",
+            "Open Palm    ->  SOS WhatsApp",
+            "Peace        ->  PowerPoint",
+            "Thumbs Up    ->  Voice Assistant",
+        ]
+    font, fs, th, lh, pad = cv2.FONT_HERSHEY_SIMPLEX, 0.52, 1, 22, 8
+    total_h = len(lines) * lh + pad * 2
+    max_w   = max(cv2.getTextSize(l, font, fs, th)[0][0] for l in lines)
+    x0 = 10
+    y0 = frame.shape[0] - total_h - 10
+    ov = frame.copy()
+    cv2.rectangle(ov, (x0 - pad, y0 - pad), (x0 + max_w + pad, y0 + total_h), (0, 0, 0), -1)
+    cv2.addWeighted(ov, 0.5, frame, 0.5, 0, frame)
+    for i, line in enumerate(lines):
+        color = (0, 255, 255) if i == 0 else (200, 200, 200)
+        cv2.putText(frame, line, (x0, y0 + i * lh + lh), font, fs, color, th)
+
+
 def main():
 
-    # gesture state
-    current_gesture = None
+    # Start Flask dashboard in background
+    flask_thread = threading.Thread(target=run_dashboard, daemon=True)
+    flask_thread.start()
+    print("Dashboard running at http://localhost:5050")
+
+    current_gesture    = None
     gesture_start_time = None
-    gesture_locked = None
-    last_action_time = 0
-
-    action_message = None
-    action_message_time = 0
-    ACTION_MSG_DURATION = 2.0
-
+    gesture_locked     = None
+    last_action_time   = 0
+    action_message     = None
+    action_message_time= 0
+    ACTION_MSG_DURATION= 2.0
     post_ppt_cooldown_time = 0
-    POST_PPT_COOLDOWN = 3.0  # ignore gestures for 3 seconds after exiting PPT
+    POST_PPT_COOLDOWN  = 3.0
 
     cap = cv2.VideoCapture(CAM_INDEX, cv2.CAP_DSHOW)
-
     if not cap.isOpened():
         raise RuntimeError("Cannot open webcam")
 
-    # smoothing buffer
     buf = deque(maxlen=SMOOTHING_WINDOW)
 
     with mp_hands.Hands(
@@ -190,176 +155,154 @@ def main():
         while True:
 
             ret, frame = cap.read()
-
             if not ret:
                 break
 
-            proc_frame = frame.copy()
-
-            frame_rgb = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2RGB)
-            results = hands.process(frame_rgb)
+            proc_frame   = frame.copy()
+            frame_rgb    = cv2.cvtColor(proc_frame, cv2.COLOR_BGR2RGB)
+            results      = hands.process(frame_rgb)
 
             overlay_text = "No hand"
             overlay_conf = 0.0
-            progress = 0
+            progress     = 0
+            current_time = time.time()
+            ignore_action= current_time < post_ppt_cooldown_time
 
-            current_time = time.time()  # get current time once per loop
-
-            ignore_action = current_time < post_ppt_cooldown_time  # skip gestures if within post-PPT cooldown
+            # read hold_time from shared state so settings panel can update it live
+            HOLD_TIME = shared_state.get_state().get("hold_time", 3)
 
             if results.multi_hand_landmarks:
 
                 hand_landmarks = results.multi_hand_landmarks[0]
+                vec            = mp_landmarks_to_vector(hand_landmarks)
+                label, conf    = predict_vector(vec)
+                label_display  = label if conf >= CONF_THRESH else "uncertain"
 
-                vec = mp_landmarks_to_vector(hand_landmarks)
-
-                label, conf = predict_vector(vec)
-
-                # show uncertain if confidence too low
-                if conf >= CONF_THRESH:
-                    label_display = label
-                else:
-                    label_display = "uncertain"
-
-                # ignore uncertain predictions in smoothing
                 if label_display != "uncertain":
                     buf.append(label_display)
 
                 if len(buf) > 0:
-
-                    vote = Counter(buf).most_common(1)[0][0]
+                    vote       = Counter(buf).most_common(1)[0][0]
                     vote_count = buf.count(vote)
-
                     overlay_text = vote
                     overlay_conf = conf
 
-                    mp_draw.draw_landmarks(
-                        proc_frame,
-                        hand_landmarks,
-                        mp_hands.HAND_CONNECTIONS
-                    )
+                    mp_draw.draw_landmarks(proc_frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-                    # gesture must be stable
                     if conf >= ACTION_CONF_THRESH and vote_count >= MIN_VOTE_COUNT:
 
-                        # new gesture detected
                         if vote != current_gesture:
-                            current_gesture = vote
+                            current_gesture    = vote
                             gesture_start_time = current_time
-
                         else:
-
                             if gesture_start_time:
-
                                 held_time = current_time - gesture_start_time
-
-                                progress = min(held_time / HOLD_TIME, 1.0)
-
-                                # ---------- ACTION TRIGGER ----------
+                                progress  = min(held_time / HOLD_TIME, 1.0)
 
                                 if held_time >= HOLD_TIME:
+                                    allow_repeat = action_manager.ppt_mode
 
-                                    allow_repeat = action_manager.ppt_mode  # allow repeats in PPT mode
+                                    if (vote != gesture_locked or allow_repeat) and \
+                                       (current_time - last_action_time > ACTION_COOLDOWN):
 
-                                    if (vote != gesture_locked or allow_repeat) and (current_time - last_action_time > ACTION_COOLDOWN):
+                                        was_ppt_mode = action_manager.ppt_mode
 
                                         if ignore_action:
-                                            # reset hold but skip action
                                             gesture_start_time = None
                                         else:
-                                            result = action_manager.handle(vote)
-                                            if result == "reset_lock":
-                                                gesture_locked = None
-                                                # start cooldown after exiting PPT
-                                                post_ppt_cooldown_time = current_time + POST_PPT_COOLDOWN
+                                            if not action_manager.ppt_mode:
+                                                if vote == "thumbs_up":
+                                                    voice_assistant.trigger()
+                                                elif vote == "open_palm":
+                                                    sos.trigger()
+                                                else:
+                                                    result = action_manager.handle(vote)
+                                                    if result == "reset_lock":
+                                                        gesture_locked = None
+                                                        post_ppt_cooldown_time = current_time + POST_PPT_COOLDOWN
+                                            else:
+                                                result = action_manager.handle(vote)
+                                                if result == "reset_lock":
+                                                    gesture_locked = None
+                                                    post_ppt_cooldown_time = current_time + POST_PPT_COOLDOWN
 
-                                        # set feedback message depending on mode
-                                        if action_manager.ppt_mode:
-                                            if vote == "index_point":
-                                                action_message = "Next Slide"
-                                            elif vote == "thumbs_up":
-                                                action_message = "Previous Slide"
-                                            elif vote == "open_palm":
-                                                action_message = "Exiting PPT Mode"
-                                            elif vote == "peace":
-                                                action_message = "Launching PowerPoint"
-                                            else:
-                                                action_message = f"Action: {vote}"
+                                        # action message + shared state update
+                                        if was_ppt_mode:
+                                            msgs = {
+                                                "index_point": "Next Slide",
+                                                "thumbs_up"  : "Previous Slide",
+                                                "open_palm"  : "Exiting PPT Mode",
+                                                "peace"      : "Launching PowerPoint",
+                                            }
                                         else:
-                                            # normal actions
-                                            if vote == "index_point":
-                                                action_message = "Opening Google Maps"
-                                            elif vote == "fist":
-                                                action_message = "Mute/Unmute Toggled"
-                                            elif vote == "open_palm":
-                                                action_message = ''
-                                            elif vote == "peace":
-                                                action_message = "Launching PowerPoint"
-                                            else:
-                                                action_message = f"Action: {vote}"
+                                            msgs = {
+                                                "index_point": "Opening Google Maps",
+                                                "fist"       : "Mute/Unmute Toggled",
+                                                "open_palm"  : "SOS Sent!",
+                                                "peace"      : "Launching PowerPoint",
+                                                "thumbs_up"  : "Listening...",
+                                            }
+                                        action_message = msgs.get(vote, f"Action: {vote}")
+                                        shared_state.update_state(last_action=action_message)
 
                                         action_message_time = current_time
-                                        last_action_time = current_time
-                                        gesture_locked = vote if not action_manager.ppt_mode else None  # allow repeats in PPT mode
-
-                                        # exit gesture hold
-                                        gesture_start_time = None
+                                        last_action_time    = current_time
+                                        gesture_locked      = vote if not action_manager.ppt_mode else None
+                                        gesture_start_time  = None
 
                     else:
-                        current_gesture = None
+                        current_gesture    = None
                         gesture_start_time = None
 
             else:
-                # reset when hand disappears
-                current_gesture = None
+                current_gesture    = None
                 gesture_start_time = None
-                gesture_locked = None
+                gesture_locked     = None
 
-            # mirror display for selfie view
+            # update shared state for dashboard
+            shared_state.update_state(
+                current_gesture=overlay_text,
+                confidence=overlay_conf,
+            )
+
             display_frame = cv2.flip(proc_frame, 1)
 
-            # overlay current gesture + confidence
-            txt = f"{overlay_text} ({overlay_conf:.2f})"
             cv2.putText(display_frame,
-                        txt,
-                        (10,30),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.9,
-                        (0,255,0),
-                        2)
+                        f"{overlay_text} ({overlay_conf:.2f})",
+                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
-            # show lock message if gesture already triggered
             if overlay_text == gesture_locked:
                 cv2.putText(display_frame,
                             "Gesture locked - change gesture",
-                            (10,130),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.45,
-                            (0,200,255),
-                            1)
+                            (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 200, 255), 1)
 
-            # show action message centered
             if action_message:
                 if time.time() - action_message_time < ACTION_MSG_DURATION:
                     draw_centered_text(display_frame, action_message, font_scale=0.9)
                 else:
                     action_message = None
 
-            # show open palm mappings if gesture_locked is open_palm and NOT in PPT and NOT in cooldown
-            if not action_manager.ppt_mode and gesture_locked == "open_palm" and not ignore_action:
-                draw_centered_text(display_frame,
-                                "Index -> Maps\nFist -> Mute\nOpen Palm -> Show Mapping",
-                                font_scale=0.8,
-                                color=(0,255,0))
-            # draw hold progress bar
+            if action_manager.ppt_mode:
+                lines = ["Index -> Next Slide", "Thumbs Up -> Previous Slide", "Open Palm -> Exit"]
+                y = 10
+                for line in lines:
+                    (tw, th), _ = cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
+                    cv2.putText(display_frame, line,
+                                (display_frame.shape[1] - tw - 10, y + th),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
+                    y += th + 5
+
+            #draw_legend(display_frame, action_manager.ppt_mode)
+
             if progress > 0:
                 draw_progress_bar(display_frame, progress)
 
+            # share frame with Flask
+            with shared_state.frame_lock:
+                shared_state.latest_frame = display_frame.copy()
+
             cv2.imshow("Live Gesture (press ESC)", display_frame)
-
-            key = cv2.waitKey(1) & 0xFF
-
-            if key == 27:
+            if cv2.waitKey(1) & 0xFF == 27:
                 break
 
     cap.release()

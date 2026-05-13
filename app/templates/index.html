@@ -1,11 +1,398 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Webcam Stream</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Gesture Control Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0d0f14;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    background: #111520;
+    border-bottom: 1px solid #1e2a3a;
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  header h1 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #00e5ff;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  #status-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: #00e676;
+    box-shadow: 0 0 8px #00e676;
+    display: inline-block;
+    margin-right: 8px;
+  }
+  #status-label { font-size: 0.75rem; color: #888; }
+
+  /* ── Main layout ── */
+  main {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 16px;
+    padding: 16px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ── Webcam ── */
+  #cam-wrap {
+    background: #111520;
+    border: 1px solid #1e2a3a;
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-height: calc(100vh - 80px);  /* <-- add this line */
+
+  }
+  #cam-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* ── Right panel ── */
+  #panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+  }
+
+  .card {
+    background: #111520;
+    border: 1px solid #1e2a3a;
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .card-title {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #00e5ff;
+    margin-bottom: 12px;
+  }
+
+  /* ── Gesture card ── */
+  #gesture-name {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #ffffff;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  #conf-bar-wrap {
+    margin-top: 8px;
+    background: #1e2a3a;
+    border-radius: 999px;
+    height: 6px;
+    overflow: hidden;
+  }
+  #conf-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #00e5ff, #00e676);
+    border-radius: 999px;
+    transition: width 0.3s ease;
+  }
+  #conf-label {
+    font-size: 0.7rem;
+    color: #555;
+    margin-top: 4px;
+  }
+
+  /* ── Last action card ── */
+  #last-action {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #00e676;
+  }
+
+  /* ── Voice card ── */
+  .voice-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    margin-bottom: 6px;
+  }
+  .voice-label {
+    font-size: 0.65rem;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    min-width: 52px;
+    padding-top: 2px;
+  }
+  .voice-value {
+    font-size: 0.85rem;
+    color: #e0e0e0;
+  }
+  #voice-heard  { color: #ffeb3b; }
+  #voice-action { color: #00e676; }
+
+  /* ── Gesture map ── */
+  .gesture-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 0;
+    border-bottom: 1px solid #1a2030;
+  }
+  .gesture-row:last-child { border-bottom: none; }
+  .gesture-icon {
+    font-size: 1.2rem;
+    margin-right: 10px;
+  }
+  .gesture-key {
+    font-size: 0.8rem;
+    color: #aaa;
+    flex: 1;
+  }
+  .gesture-val {
+    font-size: 0.8rem;
+    color: #00e5ff;
+    text-align: right;
+  }
+  .gesture-row.active-gesture .gesture-key,
+  .gesture-row.active-gesture .gesture-val {
+    color: #00e676;
+    font-weight: 700;
+  }
+
+  /* ── Settings ── */
+  .setting-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+  .setting-row:last-of-type { margin-bottom: 0; }
+  .setting-row label {
+    font-size: 0.7rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .setting-row input {
+    background: #0d0f14;
+    border: 1px solid #1e2a3a;
+    border-radius: 6px;
+    color: #e0e0e0;
+    padding: 7px 10px;
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .setting-row input:focus { border-color: #00e5ff; }
+  #save-btn {
+    width: 100%;
+    padding: 9px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(90deg, #00b4d8, #00e676);
+    color: #0d0f14;
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: opacity 0.2s;
+    margin-top: 4px;
+  }
+  #save-btn:hover { opacity: 0.85; }
+  #save-msg {
+    font-size: 0.7rem;
+    color: #00e676;
+    margin-top: 6px;
+    min-height: 14px;
+    text-align: center;
+  }
+</style>
 </head>
 <body>
-    <h1 style = "text-align:center;">Webcam Stream</h1>
-    <img src="{{ url_for('video_feed') }}" width="640" height="480">
+
+<header>
+  <h1>&#9654; Gesture Control System</h1>
+  <div>
+    <span id="status-dot"></span>
+    <span id="status-label">LIVE</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Webcam -->
+  <div id="cam-wrap">
+    <img src="/video_feed" alt="webcam feed" />
+  </div>
+
+  <!-- Right panel -->
+  <div id="panel">
+
+    <!-- Current gesture -->
+    <div class="card">
+      <div class="card-title">Current Gesture</div>
+      <div id="gesture-name">—</div>
+      <div id="conf-bar-wrap"><div id="conf-bar"></div></div>
+      <div id="conf-label">Confidence: 0%</div>
+    </div>
+
+    <!-- Last action -->
+    <div class="card">
+      <div class="card-title">Last Action</div>
+      <div id="last-action">—</div>
+    </div>
+
+    <!-- Voice assistant feedback -->
+    <div class="card">
+      <div class="card-title">Voice Assistant</div>
+      <div class="voice-row">
+        <span class="voice-label">Heard</span>
+        <span class="voice-value" id="voice-heard">—</span>
+      </div>
+      <div class="voice-row">
+        <span class="voice-label">Action</span>
+        <span class="voice-value" id="voice-action">—</span>
+      </div>
+    </div>
+
+    <!-- Gesture map -->
+    <div class="card">
+      <div class="card-title">Gesture Map</div>
+      <div class="gesture-row" data-gesture="index_point">
+        <span class="gesture-icon">☝️</span>
+        <span class="gesture-key">Index Point</span>
+        <span class="gesture-val">Google Maps</span>
+      </div>
+      <div class="gesture-row" data-gesture="fist">
+        <span class="gesture-icon">✊</span>
+        <span class="gesture-key">Fist</span>
+        <span class="gesture-val">Mute / Unmute</span>
+      </div>
+      <div class="gesture-row" data-gesture="open_palm">
+        <span class="gesture-icon">🖐️</span>
+        <span class="gesture-key">Open Palm</span>
+        <span class="gesture-val">SOS WhatsApp</span>
+      </div>
+      <div class="gesture-row" data-gesture="peace">
+        <span class="gesture-icon">✌️</span>
+        <span class="gesture-key">Peace</span>
+        <span class="gesture-val">PowerPoint</span>
+      </div>
+      <div class="gesture-row" data-gesture="thumbs_up">
+        <span class="gesture-icon">👍</span>
+        <span class="gesture-key">Thumbs Up</span>
+        <span class="gesture-val">Voice Assistant</span>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="card">
+      <div class="card-title">Settings</div>
+      <div class="setting-row">
+        <label>SOS Phone Number</label>
+        <input type="text" id="sos-phone" placeholder="e.g. 201012345678" />
+      </div>
+      <div class="setting-row">
+        <label>Hold Time (seconds)</label>
+        <input type="number" id="hold-time" min="1" max="10" step="0.5" />
+      </div>
+      <button id="save-btn">SAVE SETTINGS</button>
+      <div id="save-msg"></div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+  const GESTURE_LABELS = {
+    "index_point" : "Index Point",
+    "fist"        : "Fist",
+    "open_palm"   : "Open Palm",
+    "peace"       : "Peace",
+    "thumbs_up"   : "Thumbs Up",
+    "No hand"     : "No hand",
+    "uncertain"   : "Uncertain",
+  };
+
+  async function poll() {
+    try {
+      const res  = await fetch('/api/state');
+      const data = await res.json();
+
+      // gesture
+      const gLabel = GESTURE_LABELS[data.current_gesture] || data.current_gesture;
+      document.getElementById('gesture-name').textContent = gLabel;
+
+      // confidence bar
+      const pct = Math.round((data.confidence || 0) * 100);
+      document.getElementById('conf-bar').style.width  = pct + '%';
+      document.getElementById('conf-label').textContent = `Confidence: ${pct}%`;
+
+      // last action
+      document.getElementById('last-action').textContent = data.last_action || '—';
+
+      // voice
+      document.getElementById('voice-heard').textContent  = data.voice_heard  || '—';
+      document.getElementById('voice-action').textContent = data.voice_action || '—';
+
+      // highlight active gesture row
+      document.querySelectorAll('.gesture-row').forEach(row => {
+        row.classList.toggle('active-gesture',
+          row.dataset.gesture === data.current_gesture);
+      });
+
+      // populate settings inputs only once (when empty)
+      const sosInput  = document.getElementById('sos-phone');
+      const holdInput = document.getElementById('hold-time');
+      if (!sosInput.value)  sosInput.value  = data.sos_phone  || '';
+      if (!holdInput.value) holdInput.value = data.hold_time  || 3;
+
+    } catch (e) { /* server not ready yet */ }
+  }
+
+  // poll every 500ms
+  setInterval(poll, 500);
+  poll();
+
+  // save settings
+  document.getElementById('save-btn').addEventListener('click', async () => {
+    const payload = {
+      sos_phone : document.getElementById('sos-phone').value.trim(),
+      hold_time : parseFloat(document.getElementById('hold-time').value),
+    };
+    const res  = await fetch('/api/settings', {
+      method  : 'POST',
+      headers : { 'Content-Type': 'application/json' },
+      body    : JSON.stringify(payload),
+    });
+    const data = await res.json();
+    const msg  = document.getElementById('save-msg');
+    msg.textContent = data.status === 'ok' ? '✓ Settings saved' : '✗ Error saving';
+    setTimeout(() => msg.textContent = '', 3000);
+  });
+</script>
 </body>
 </html>
