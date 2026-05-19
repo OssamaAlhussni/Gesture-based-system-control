@@ -17,7 +17,6 @@
     overflow: hidden;
   }
 
-  /* ── Header ── */
   header {
     background: #111520;
     border-bottom: 1px solid #1e2a3a;
@@ -44,7 +43,7 @@
   }
   #status-label { font-size: 0.75rem; color: #888; }
 
-  /* ── Main layout ── */
+  /*Main layout*/
   main {
     display: grid;
     grid-template-columns: 1fr 360px;
@@ -54,7 +53,7 @@
     min-height: 0;
   }
 
-  /* ── Webcam ── */
+  /* Webcam */
   #cam-wrap {
     background: #111520;
     border: 1px solid #1e2a3a;
@@ -63,7 +62,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    max-height: calc(100vh - 80px);  /* <-- add this line */
+    max-height: calc(100vh - 80px);  
 
   }
   #cam-wrap img {
@@ -73,7 +72,7 @@
     display: block;
   }
 
-  /* ── Right panel ── */
+  /* Right panel */
   #panel {
     display: flex;
     flex-direction: column;
@@ -96,7 +95,7 @@
     margin-bottom: 12px;
   }
 
-  /* ── Gesture card ── */
+  /* Gesture card */
   #gesture-name {
     font-size: 1.6rem;
     font-weight: 700;
@@ -124,14 +123,14 @@
     margin-top: 4px;
   }
 
-  /* ── Last action card ── */
+  /* Last action card */
   #last-action {
     font-size: 1rem;
     font-weight: 600;
     color: #00e676;
   }
 
-  /* ── Voice card ── */
+  /* Voice card */
   .voice-row {
     display: flex;
     gap: 8px;
@@ -153,7 +152,7 @@
   #voice-heard  { color: #ffeb3b; }
   #voice-action { color: #00e676; }
 
-  /* ── Gesture map ── */
+  /*Gesture map*/
   .gesture-row {
     display: flex;
     align-items: center;
@@ -182,7 +181,7 @@
     font-weight: 700;
   }
 
-  /* ── Settings ── */
+  /*Settings*/
   .setting-row {
     display: flex;
     flex-direction: column;
@@ -243,15 +242,12 @@
 
 <main>
 
-  <!-- Webcam -->
   <div id="cam-wrap">
     <img src="/video_feed" alt="webcam feed" />
   </div>
 
-  <!-- Right panel -->
   <div id="panel">
 
-    <!-- Current gesture -->
     <div class="card">
       <div class="card-title">Current Gesture</div>
       <div id="gesture-name">—</div>
@@ -259,13 +255,11 @@
       <div id="conf-label">Confidence: 0%</div>
     </div>
 
-    <!-- Last action -->
     <div class="card">
       <div class="card-title">Last Action</div>
       <div id="last-action">—</div>
     </div>
 
-    <!-- Voice assistant feedback -->
     <div class="card">
       <div class="card-title">Voice Assistant</div>
       <div class="voice-row">
@@ -278,7 +272,6 @@
       </div>
     </div>
 
-    <!-- Gesture map -->
     <div class="card">
       <div class="card-title">Gesture Map</div>
       <div class="gesture-row" data-gesture="index_point">
@@ -308,7 +301,6 @@
       </div>
     </div>
 
-    <!-- Settings -->
     <div class="card">
       <div class="card-title">Settings</div>
       <div class="setting-row">

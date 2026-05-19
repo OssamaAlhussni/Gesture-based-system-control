@@ -2,11 +2,11 @@ import json
 import numpy as np
 import cv2
 
-# -------- CONFIG --------
+# CONFIG
 JSON_FILE = "json_test.txt"   # path to ONE json file
 OUT_IMG   = "debug_landmarks.png"
 IMG_SIZE  = 512
-# ------------------------
+# 
 
 with open(JSON_FILE, "r") as f:
     data = json.load(f)

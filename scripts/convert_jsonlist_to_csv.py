@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Convert a file containing multiple JSON records (array, NDJSON, or concatenated JSON)
+Convert a file containing multiple JSON records
 into a normalized CSV of landmark vectors.
 
 Each output row:
@@ -22,11 +22,7 @@ import numpy as np
 
 def parse_multi_json_file(path):
     """Return a list of JSON objects parsed from file.
-    Handles:
-      - a single JSON array: [ {...}, {...} ]
-      - a single JSON object
-      - newline-delimited JSON (one JSON per line)
-      - concatenated JSON objects (tries to find matching braces)
+    
     """
     txt = open(path, "r", encoding="utf-8").read().strip()
     if not txt:
@@ -42,7 +38,7 @@ def parse_multi_json_file(path):
     except Exception:
         pass
 
-    # Try NDJSON (one JSON per line)
+    # one JSON per line
     lines = [l.strip() for l in txt.splitlines() if l.strip()]
     objs = []
     ndjson_ok = True
@@ -79,7 +75,7 @@ def parse_multi_json_file(path):
 
 def normalize_landmarks_21_xy(lm21, mirror=False):
     """Normalize landmarks: wrist as origin, scale by max euclidean distance, flatten x,y pairs.
-    lm21: list of 21 [x,y] coordinates (normalized between 0..1 typically).
+    lm21: list of 21 [x,y] coordinates.
     mirror: horizontally flip (x = 1 - x) before normalization.
     Returns list of 42 floats.
     """
@@ -99,18 +95,16 @@ def normalize_landmarks_21_xy(lm21, mirror=False):
 
 def process_records(records, out_rows, forced_label=None, force_mirror=False, per_hand="first"):
     """Process list of json records and append normalized rows to out_rows list.
-    per_hand: "first" or "all" (which detected hands in record to process).
     """
     for rec in records:
-        # record may have structure like the example:
-        # rec["landmarks"] -> list of hands, where each hand is list of 21 [x,y]
+        # rec["landmarks"] is a list of hands, where each hand is list of 21 [x,y]
         landmarks_list = rec.get("landmarks") or rec.get("landmarks2") or rec.get("keypoints") or None
         if landmarks_list is None:
             # try older key names, or maybe the rec itself IS the landmarks list
             if isinstance(rec, list):
                 landmarks_list = rec
             else:
-                # no landmarks -> skip
+                # no landmarks =  skip
                 continue
 
         labels = rec.get("labels") or rec.get("label") or []
@@ -124,7 +118,7 @@ def process_records(records, out_rows, forced_label=None, force_mirror=False, pe
 
         # decide mirroring: prefer explicit leading_hand if present
         leading_hand = rec.get("leading_hand", None)
-        # For safety: if string "left"/"right" present, decide to mirror left -> True
+        # For safety: if string "left"/"right" present, decide to mirror left = True
         mirror_if_left = None
         if leading_hand:
             try:
@@ -137,9 +131,9 @@ def process_records(records, out_rows, forced_label=None, force_mirror=False, pe
 
         # process per-hand
         for i, hlm in enumerate(landmarks_list):
-            # hlm should be 21 pairs (or maybe nested)
+            # hlm should be 21 pairs 
             try:
-                # sometimes stored as [ [x,y], [x,y], ...]
+                
                 if not hlm:
                     continue
                 # If each item is a list of two floats already, ok.
@@ -154,7 +148,7 @@ def process_records(records, out_rows, forced_label=None, force_mirror=False, pe
                     if isinstance(p, (list, tuple)) and len(p) >= 2:
                         pts.append([float(p[0]), float(p[1])])
                     else:
-                        # unexpected format -> skip hand
+                        # unexpected format so skip hand
                         pts = []
                         break
                 if len(pts) != 21:
@@ -182,8 +176,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--infile", "-i", required=True, help="input text file containing multiple JSON records")
     p.add_argument("--out", "-o", default="data/palm_embeddings.csv", help="output CSV path")
-    p.add_argument("--label", "-l", default=None, help="force label name for all entries (e.g. open_palm)")
-    p.add_argument("--force-mirror", action="store_true", help="mirror all landmarks horizontally (useful to canonicalize handedness)")
+    p.add_argument("--label", "-l", default=None, help="force label name for all entries")
+    p.add_argument("--force-mirror", action="store_true", help="mirror all landmarks horizontally")
     p.add_argument("--per-hand", choices=("first","all"), default="first", help="process first detected hand only or all hands per json")
     args = p.parse_args()
 
@@ -202,7 +196,7 @@ def main():
     process_records(records, out_rows, forced_label=args.label, force_mirror=args.force_mirror, per_hand=args.per_hand)
 
     if not out_rows:
-        print("No valid landmark rows produced (check JSON structure).")
+        print("No valid landmark rows produced check JSON structure.")
         sys.exit(1)
 
     write_csv(args.out, out_rows)

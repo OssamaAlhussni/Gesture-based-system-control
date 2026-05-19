@@ -1,10 +1,10 @@
 import threading
 
-# --- live frame shared between live_predict and Flask video feed ---
+#live frame shared between live_predict and Flask video feed
 latest_frame = None
 frame_lock   = threading.Lock()
 
-# --- gesture / action state polled by dashboard ---
+# gesture / action state polled by dashboard
 state = {
     "current_gesture" : "No hand",
     "confidence"      : 0.0,

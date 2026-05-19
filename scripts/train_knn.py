@@ -33,15 +33,15 @@ le = LabelEncoder()
 y_enc = le.fit_transform(y)
 
 # Choose K
-k = 5   # small dataset → small k
+k = 5   # small dataset so small k
 knn = KNeighborsClassifier(n_neighbors=k, metric="euclidean")
 
 knn.fit(X, y_enc)
 
-# Save model + encoder
+# Save model and encoder
 joblib.dump((knn, le), MODEL_OUT)
 
-print("✅ KNN trained")
+print(" KNN trained")
 print("Samples:", len(X))
 print("Classes:", list(le.classes_))
 print("Model saved to:", MODEL_OUT)

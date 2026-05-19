@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """
+Main entry script
 Live webcam gesture recognition (right-hand only)
 Runs Flask dashboard in background thread on http://localhost:5050
 """
@@ -15,7 +16,7 @@ from actions.registry import ActionManager
 from actions.voice_assistant import VoiceAssistant
 from actions.sos_whatsapp import SosWhatsApp
 import app.shared_state as shared_state
-from app.dashboard import run as run_dashboard      # <-- Flask
+from app.dashboard import run as run_dashboard      #Flask
 
 action_manager = ActionManager()
 voice_assistant = VoiceAssistant(action_manager)
@@ -28,7 +29,7 @@ import mediapipe as mp
 import numpy as np
 
 
-# ---------- CONFIG ----------
+#CONFIG
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT  = os.path.dirname(BASE_DIR)
 MODEL_PATH    = os.path.join(PROJECT_ROOT, "models", "knn_gesture.pkl")
@@ -39,7 +40,7 @@ ACTION_CONF_THRESH = 0.80
 MIN_VOTE_COUNT     = 4
 ACTION_COOLDOWN    = 2
 CAM_INDEX          = 0
-# ----------------------------
+#
 
 
 if not os.path.exists(MODEL_PATH):
@@ -226,7 +227,7 @@ def main():
                                                     gesture_locked = None
                                                     post_ppt_cooldown_time = current_time + POST_PPT_COOLDOWN
 
-                                        # action message + shared state update
+                                        # action message and shared state update
                                         if was_ppt_mode:
                                             msgs = {
                                                 "index_point": "Next Slide",

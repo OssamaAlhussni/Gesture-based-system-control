@@ -7,7 +7,7 @@ from actions.fist import FistAction
 from actions.open_palm import OpenPalmAction
 import time
 
-# ---------- PPT dual-mode setup ----------
+# PPT mode setup 
 ppt_path = r"C:\Users\ossam\Desktop\Desktop\University\Sem 7\Grad project\final_ppt_gp.pptx"
 
 class PeaceAction:
@@ -20,7 +20,7 @@ class PeaceAction:
             subprocess.Popen(['start', 'powerpnt', ppt_path], shell=True)
             self.manager.ppt_mode = True
 
-# ---------- Action Manager ----------
+#Action Manager
 class ActionManager:
     """Maps gesture labels to actions and manages PPT mode."""
     def __init__(self):

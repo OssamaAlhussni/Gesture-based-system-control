@@ -78,3 +78,5 @@ y_pred = le.inverse_transform(y_pred_encoded)
 
 print("\nClassification Report:\n")
 print(classification_report(y_true, y_pred))
+from sklearn.metrics import ConfusionMatrixDisplay
+ConfusionMatrixDisplay.from_predictions(y_true, y_pred).figure_.savefig("confusion_matrix.png")
