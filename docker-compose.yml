@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  gesture-app:
+    build: .
+    image: gesture-based-system-control
+
+    devices:
+      - /dev/video0:/dev/video0
+
+    environment:
+      - DISPLAY=${DISPLAY}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+
+    ports:
+      - "5050:5050"
+
+    network_mode: host
+    privileged: false
+    ipc: host
